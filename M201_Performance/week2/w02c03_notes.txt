@@ -1,0 +1,175 @@
+  ------------------------------------------------------------------------------
+    1. Building Indexes
+  ------------------------------------------------------------------------------
+
+  - Building in foreground
+      Fast, but block operations to the database on whose collection the index is being built. Thus unaccptable on a production db, unless done during a maintanence window
+
+  - Building in Background
+      Doesn't block operations, but takes longer, based on read/write load on database
+
+
+  Example of Background index build:
+
+    # import the restaurants dataset
+    mongoimport -d m201 -c restaurants --drop restaurants.json
+
+    // switch to the m201 database
+    use m201
+
+    // create an index in the background
+    db.restaurants.createIndex( {"cuisine": 1, "name": 1, "address.zipcode": 1}, {"background": true} )
+
+
+    // from another shell, switch to the m201 database, and find all index-build operations
+    use m201
+    db.currentOp(
+      {
+        $or: [
+          { op: "command", "query.createIndexes": { $exists: true } },
+          { op: "insert", ns: /\.system\.indexes\b/ }
+        ]
+      }
+    )
+
+    // kill the running query using the opid if it hangs up
+    db.killOp(<opID>)
+
+    // Output of the currentOp() function:
+      {
+    	"inprog" : [
+    		{
+    			"desc" : "conn4",
+    			"threadId" : "139728846145280",
+    			"connectionId" : 4,
+    			"client" : "127.0.0.1:58878",
+    			"appName" : "MongoDB Shell",
+    			"clientMetadata" : {
+    				"application" : {
+    					"name" : "MongoDB Shell"
+    				},
+    				"driver" : {
+    					"name" : "MongoDB Internal Client",
+    					"version" : "3.4.6"
+    				},
+    				"os" : {
+    					"type" : "Linux",
+    					"name" : "LinuxMint",
+    					"architecture" : "x86_64",
+    					"version" : "18"
+    				}
+    			},
+    			"active" : true,
+    			"opid" : 21891,
+    			"secs_running" : 1,
+    			"microsecs_running" : NumberLong(1102448),
+    			"op" : "command",
+    			"ns" : "m201.$cmd",
+    			"query" : {
+    				"createIndexes" : "restaurants",
+    				"indexes" : [
+    					{
+    						"key" : {
+    							"cuisine" : 1,
+    							"name" : 1,
+    							"address.zipcode" : 1
+    						},
+    						"name" : "cuisine_1_name_1_address.zipcode_1",
+    						"background" : true
+    					}
+    				]
+    			},
+    			"msg" : "Index Build (background) Index Build (background): 245826/1000000 24%", // voila
+    			"progress" : {
+    				"done" : 245826,
+    				"total" : 1000000
+    			},
+    			"numYields" : 1927,
+    			"locks" : {
+    				"Global" : "w",
+    				"Database" : "w",
+    				"Collection" : "w"
+    			},
+    			"waitingForLock" : false,
+    			"lockStats" : {
+    				"Global" : {
+    					"acquireCount" : {
+    						"r" : NumberLong(1928),
+    						"w" : NumberLong(1928)
+    					}
+    				},
+    				"Database" : {
+    					"acquireCount" : {
+    						"w" : NumberLong(1928),
+    						"W" : NumberLong(1)
+    					}
+    				},
+    				"Collection" : {
+    					"acquireCount" : {
+    						"w" : NumberLong(1928)
+    					}
+    				}
+    			}
+    		}
+    	],
+    	"ok" : 1
+    }
+
+
+================================================================================
+
+  ------------------------------------------------------------------------------
+    1. Understanding Explain
+  ------------------------------------------------------------------------------
+
+  Explain verbosity levels, in ascending order:
+
+    1. queryPlanner
+    2. executionStats
+    3. allPlansExecution
+
+  Looking at executionStats output, we would want "totalKeysExamined" and "totalDocsExamined" to be as close as possible to "nReturned" value (number of documents returned)
+
+  How to spot if you are sorting in memory rather than through the index:
+    You will have an explicit sort stage, after your FETCH stage that may have used the index.
+
+  If SORT used index: no separate SORT stage will exist in `executionStats`, as the FETCH itself will return docs in proper sorted order.
+
+  explain() outputs should be read `inside-out`, i.e the most deeply nested part is the one that ran before the less nested parts. As such, one common pattern is :
+
+    IXSCAN -> FETCH -> SORT ( in-memory SORT, else SORT stage would not exists)
+
+  Here, IXSCAN is performed first, and it's inside FETCH, which is inside the SORT stage
+
+  ------------------------------------------------------------------------------
+    2. More About QueryPlanner
+  ------------------------------------------------------------------------------
+
+  When a new query comes in, the service will look at all available indexes to see which one would be viable to satisfy the query. These are referred as `Candidate Indexes`, from which, the service generates `Candidate Plans`. MongoDB has an `empirical query planner`, which means there will be a trial period during which the candidate plans will be exected for a short period of time. The service sets a threshold performance metric, and whichever candidate meets the metric first, is chosen as the winning query plan. The other candidates go to the rejected plans field.
+
+  Also, mongodb keeps a cache of the winning plans for different types of queries, so the next time a familiar query (i.e having a familiar shape) comes in, it does not have to go through a trial period and directly choose a winning query plan.
+
+  Now, with time, the data can change, along with the indexes and `popular` query shapes.
+  The cache described above may evict a plan. This can happen based on :
+    - Server Restart
+    - Work perfomed by initial part of query exceeds the winningPlan by a factor of 10
+    - Index rebuild
+    - Index creation/drop
+
+================================================================================
+
+  ------------------------------------------------------------------------------
+    1. Planning Index Resources
+  ------------------------------------------------------------------------------
+
+    db.restaurants.stats({indexDetails:true}) // gives a whole lotta detail info
+
+  Rule of thumb:
+    - Try to keep index space low
+    - Do not keep unused indexes in Prod Server
+
+  Edge Cases:
+    - BI Tools : These are not frequently used, and they can thus be fetched from DISK when needed. Also, These can run in the background on secondary servers instead of primary one.
+    - Incremental Data : If index is on a field that is monotonically increasing, then to get the recent data, we only need to look at a small portion of the right (b-tree : right : greater) hand side of the index
+
+================================================================================

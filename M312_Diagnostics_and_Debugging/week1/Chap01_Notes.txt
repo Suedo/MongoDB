@@ -1,0 +1,11 @@
+Tools:
+
+1. mongostat: shows incoming operations in real time
+2. mongotop: shows which collection we are reading from and writting to
+3. mongoreplay: monitor, record and replay network traffic
+4. mongo: admin shell
+5. profiler: logs queries for us
+6. compass: GUI to look at current state of DB, plus do real time analysis
+7. mtools: public github repo to spin up replica sets and sharded clusters locally for testing, and load testing
+
+================================================================================

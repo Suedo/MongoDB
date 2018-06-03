@@ -1,0 +1,50 @@
+All configuration details for the mongo installation are stored at:
+/etc/mongod.conf
+
+    # mongod.conf
+
+    # for documentation of all options, see:
+    #   http://docs.mongodb.org/manual/reference/configuration-options/
+
+    # Where and how to store data.
+    storage:
+      dbPath: /var/lib/mongodb
+      journal:
+        enabled: true
+
+    # where to write logging data.
+    systemLog:
+      destination: file
+      logAppend: true
+      path: /var/log/mongodb/mongod.log
+
+    # network interfaces
+    net:
+      port: 27017
+      bindIp: 127.0.0.1
+
+
+================================================================================
+
+Installing mtools: https://github.com/rueckstiess/mtools/blob/develop/INSTALL.md
+
+  What all did not work:
+    1. `pip install` methods
+        - pip install mtools : did not work : Command "python setup.py egg_info" failed with error code 1 in /tmp/pip-build-05MeUF/mtools/
+        - (Dependency installs) : pip install psutil : did not work
+    2. While compiling from source:
+      sudo python setup.py install : fatal error: Python.h: No such file or directory
+      ^^ https://stackoverflow.com/a/21530768/2715083 : This solved it.
+
+  Remedy (as per StackOverflow answer):
+
+    sudo apt-get install python-dev
+
+
+  Retrying Compiling from source (after python-dev install ):
+
+    1. git clone git://github.com/rueckstiess/mtools.git
+    2. cd mtools/
+    3. sudo python setup.py develop
+
+================================================================================

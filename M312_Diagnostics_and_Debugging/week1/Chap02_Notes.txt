@@ -1,0 +1,318 @@
+Server Logs are the first place to look into when some fault happens. Read more:
+https://docs.mongodb.com/manual/reference/log-messages/
+
+Format of the the data:  <timestamp> <severity> <component> [<context>] <message>
+
+Component Types:
+
+  1. Access
+  2. Command
+  3. Control
+  4. Geo
+  5. Index
+  6. Network
+  7. Query
+  8. Repl
+  9. Sharding
+  10. Storage
+  11. Journal
+  12. Write
+
+Severity Types:
+
+  1. F :: Fatal error : uncaught server exception leading to server crash. Rare.
+  2. E :: Error : Internal server error that does not lead to server crash
+  3. W :: Warning : Might indicate a problem but does not stop the server from doing its job
+  4. I :: Informational : Everything logged by default
+  5. D :: Diagnostic : This comes up when verbosity level > 0 (generally not done in Prod databases)
+
+--------------------------------------------------------------------------------
+
+Kill a mongod process from the terminal:
+
+  ps -ef | grep mongod
+  // this will display all mongod instances running, with their process id (pid)
+  // note the pid of the instance you want to kill, and then :
+  kill -9 pid
+  // not sure of what the -9 does though (yet)
+
+--------------------------------------------------------------------------------
+
+db.currentOp() and db.killOp():
+
+// db methods, M101JS/mongoCommands.js has the full list
+// you can get the same by doing `db.help()` in the mongo shell
+
+  db.currentOp():
+    Returns a document that contains information on in-progress operations for the
+    database instance. The db.currentOp() method wraps the database command currentOp.
+    https://docs.mongodb.com/manual/reference/method/db.currentOp/
+
+    On a fresh server, with nothing running, this is what db.currenOp() shows:
+    {
+    	"desc" : "conn1",
+    	"threadId" : "140650125813504",
+    	"connectionId" : 1,
+    	"client" : "127.0.0.1:35586",
+    	"appName" : "MongoDB Shell",
+    	"clientMetadata" : {
+    		"application" : {
+    			"name" : "MongoDB Shell"
+    		},
+    		"driver" : {
+    			"name" : "MongoDB Internal Client",
+    			"version" : "3.4.6"
+    		},
+    		"os" : {
+    			"type" : "Linux",
+    			"name" : "LinuxMint",
+    			"architecture" : "x86_64",
+    			"version" : "18"
+    		}
+    	},
+    	"active" : true,
+    	"opid" : 90,
+    	"secs_running" : 0,
+    	"microsecs_running" : NumberLong(26),
+    	"op" : "command",
+    	"ns" : "admin.$cmd",
+    	"query" : {
+    		"currentOp" : 1
+    	},
+    	"numYields" : 0,
+    	"locks" : {
+
+    	},
+    	"waitingForLock" : false,
+    	"lockStats" : {
+
+    	}
+    }
+
+  db.killOp(opID):
+    Terminates an operation as specified by the operation ID.
+    db.currentOp() gives us the operation ID.
+    Notice the `opid` in the above section : 90
+    https://docs.mongodb.com/manual/reference/method/db.killOp/
+
+--------------------------------------------------------------------------------
+
+DEMO of db.currentOp() and db.killOp(): (need three open mongo shells)
+
+  Shell 1:
+
+    Run this function: (slightly modified from the handouts, to make it less damaging)
+    // assuming the m312 database is properly setup based on the handouts
+
+    function insertDocs() {
+        db = db.getSisterDB("m312");
+        db.things.drop();
+        // var bigString = Array(10000).join("Padding ");  // 80 kb string
+        var bigString = Array(10).join("ABC ");  // a much smaller string
+        var docCount = 0;
+        var docsPerBatch = 100;
+        while (true) {
+            print("About to insert docs. So far, I have inserted " + docCount +
+                  " documents.");
+            docs = [];
+            for (i=1; i<=docsPerBatch; i++) {
+                docs.push( { docNumber : (docCount + i), filler : bigString } );
+            };
+            db.things.insertMany( docs );
+            docCount += docsPerBatch;
+            print("  ... done.");
+        };
+    };
+
+  Shell 2:
+
+    We'll run this function containing a really inefficient find query on the above database:
+
+    function queryDocs() {
+        try {
+            db = db.getSisterDB("m312");
+            var curs = db.things.find( { filler: /asdf/ } ); // not gonna find any
+            curs.next();
+        } catch (err) {
+            print(err.message);
+        }
+    };
+
+  Shell 3:
+
+    1. run db.currentOp(): This will show the query we ran in Shell 1
+        In case you're not sure, it will be the one with the "query" field like:
+          "query" : {
+            "find": "things",
+            "filter": { "filler": /asdf/ }
+          }
+    2. get the `opid` from it
+    3. issue a db.killOp() on that id : db.killOp( 90 ) // assuming the opid was 90
+
+  Now go back to Shell 2, and you'll see the queryDocs() function has stopped executing,
+  with something like the below message displayed:
+
+    error: {
+      "ok": 0,
+      "errmsg": "operation was interrupted",
+      "code": 11601, // may not match
+      "codeName": "Interrupted"
+    }
+
+.. And that's how you use currentOp() and killOp() ! :)
+
+--------------------------------------------------------------------------------
+
+db.serverStatus():
+
+  An admin command that provides an overview of the important metrics of
+  the database process’s state. This command provides a wrapper around the
+  database command `serverStatus`.
+  https://docs.mongodb.com/manual/reference/method/db.serverStatus/
+
+
+  You can restrict serverStatus() display items by using regular projection rules:
+  The following operation *suppresses* the repl, metrics and locks information in the output.
+    db.serverStatus( { repl: 0,  metrics: 0, locks: 0 } )
+  The following example *includes* rangeDeleter and all repl information in the output:
+    db.serverStatus( { rangeDeleter: 1, repl: 1 } )
+
+
+  List of all the stuff on offer:
+
+    > var serv = db.serverStatus()
+    > Object.keys(serv)
+    [
+    	"host",
+    	"version",
+    	"process",
+    	"pid",
+    	"uptime",
+    	"uptimeMillis",
+    	"uptimeEstimate",
+    	"localTime",
+    	"asserts",
+    	"connections",
+    	"extra_info",
+    	"globalLock",
+    	"locks",
+    	"network",
+    	"opLatencies",
+    	"opcounters",
+    	"opcountersRepl",
+    	"storageEngine",
+    	"tcmalloc",
+    	"wiredTiger",
+    	"mem",
+    	"metrics",
+    	"ok"
+    ]
+
+  These can de grouped up as:
+
+    1. Instance Information
+    2. Asserts
+    3. Connections and Networks
+    4. Locking
+    5. Operation Stats
+    6. Security
+    7. Replication Stats
+    8. Storage Engine Stats
+    9. Metrics
+
+  We can get individual keys from serverStatus like below:
+
+    > db.serverStatus().host       // somjit-mint18
+
+    > db.serverStatus().version    // 3.4.6
+
+    > db.serverStatus().process    // mongod
+
+    > db.serverStatus().pid        // NumberLong(5391)
+
+    > db.serverStatus().connections
+    { "current" : 1, "available" : 51199, "totalCreated" : 2 }
+
+    > db.serverStatus().asserts    // assertion errors: relatively rare, so keep an eye out of these
+    { "regular" : 0, "warning" : 0, "msg" : 0, "user" : 0, "rollovers" : 0 }
+
+    > db.serverStatus().mem       // current memory utilization
+    {
+    	"bits" : 64,
+    	"resident" : 64,
+    	"virtual" : 930,
+    	"supported" : true,
+    	"mapped" : 0,
+    	"mappedWithJournal" : 0
+    }
+
+    > db.serverStatus().metrics.document // the count here tracks number of documents affected
+    {
+    	"deleted" : NumberLong(0),
+    	"inserted" : NumberLong(0),
+    	"returned" : NumberLong(0),
+    	"updated" : NumberLong(0)
+    }
+
+    > db.serverStatus().opcounters  // total number of operations made, globally, spanning all documents
+    {
+    	"insert" : 0,
+    	"query" : 1,
+    	"update" : 0,
+    	"delete" : 0,
+    	"getmore" : 0,
+    	"command" : 40
+    }
+
+
+--------------------------------------------------------------------------------
+
+Profiler:
+
+  The database profiler collects fine grained data about MongoDB write operations,
+  cursors, database commands on a running mongod instance. You can enable profiling
+  on a per-database or per-instance basis. The profiling level is also
+  configurable when enabling profiling. The profiler is off by default.
+
+  Do not keep this on in the production server. It will add a write for every read/write
+  operation that is done, slowing things down.
+
+  The database profiler writes all the data it collects to the system.profile
+  collection, which is a capped collection.
+
+  https://docs.mongodb.com/manual/tutorial/manage-the-database-profiler/
+
+  Profiling Levels:
+
+    0 : The profiler is off, does not collect any data. Default.
+
+    1 : Collects profiling data for slow operations only. `slowOpThresholdMs` determines
+        how much is considered "slow". Default : 100 ms. Modify `slowOpThresholdMs`
+        to fit your db needs.
+
+        > db.getProfilingStatus()
+          { "was" : 0, "slowms" : 100 }
+
+
+    2 : collects profiling data for all database operations.
+
+
+--------------------------------------------------------------------------------
+
+Server Diagnostic tools (* marked): // some may not be available in community ed.
+
+  01. bsondump : bson dump to JSON
+  02. mongo : mongo shell
+  03. mongod : mongodb server
+  04. mongodump : Export to binary
+  05. mongoexport : Export to JSON
+  06. mongofiles
+  07. mongoimport : import JSON
+  08. mongooplog : pull a replicaset oplog and apply it to a local server
+  09. * mongoperf : performance testing tool for disk IO. Limited reach, use for basic stuff.
+  10. mongorestore : import binary
+  11. mongos : shard and replicaset server
+  12. * mongostat : Real time statistics tool. Default: updates once a second.
+  13. * mongotop : Simple analysis of time spent in different namespaces per sampling unit.
+  14. * mongoreplay : Network diagnostic/analysis. Monitor, Record and Replay network traffic.
+  15. * mongoldap : validate ldap config for our mongod server

@@ -1,0 +1,31 @@
+/*WEEK 5*/ 1. Normalization helps remove modification anomalies from the system, and also removes any data bias from the table. Also minimizes redesign when extending the DB. It is not biased towards any arrangement, but, (-ve point here) looking at it differently, not being biased means equally bad at all cases.
+2. ACID : Atomiticy, Consistency, Isolation Durability : Provided by RDMS normalization. We want the same in MongoDB as well.
+3. Larger than 16 MB cannot be embedded
+4. One-to-one relationship : can embed one inside other. Considerations to make: size, growth-rate, #hits of document being embedded. If too big, or growing too fast, or too frequently accessed, might wanna make it a separate document.
+5. One to Many : Probably need a separate document for the 'many', and the 'one' will have an index to entries in the 'many'. However, if it is One-To-Few : 'few' can be embedded
+6. Same thing applies to Many-to-Many. In that cases, better have separate documents, and index them. But if it is 'few' to 'few', you can embed them.
+7. MultiKey indexes make embedding really productive. Lets say 'Teachers' is embedded inside 'Students' doc. Its easy to find all teachers for a single student, but not the other way around, as only 'Teachers' is embedded inside each student. So what we can do is that create an Index on teachers, and project the student names for a particular teacher.
+8. Other benefits of embedding involve: a> can improve cache locality b> if data is being fetched from traditional HDDs, then the only delay is in finding the sector in the HDD that stores the data, from there, it is more or less contiguos, and very fast retrieval possible.
+9. If you want to represent a tree, keep a list of ancestors and not children.
+10. Two types of storage engines : MMAPV1 & WiredTiger
+11. MMAPV1: Multi reader single writer - Provides Collection level concurrency, locks when writing. Architechture is like basic OS virtual memory mapping.
+12. WiredTiger: Document level concurrency. lock free implementation, Optimistic concurrency model. Storage engine assumens two writes will not be to the same location, and if it is, it will try again. Document level concurrency is 'a huge win' over collection level concurrency. WiredTigeralso offers compression of data as well as indexes. If you have a 100 GB persistent storage for your database, MMAPV1 will have a 100GB memory with one to one mapping. WiredTiger on the otherhand, works with a much smaller memory, and decides which pages to keep in memory. The stuff that it writes to disk, it compresses them, saving a lot of space. Also, Has NO INPLACE UPDATES. It is append only. Creates a new data with the update, and marks the old stuff as useless, and reclaims its space later on.
+13. command to kill all mongod instances running : killall mongod
+14. An index is like an ordered array, with each key having a pointer to a location to the actual place where the document is stored.
+15. getIndexes() : show what all indexes exist. createIndex() : to create a new index. dropIndex() drops an index
+16. MultiKey Indexes : For a compound index, maximum of one member can be an array. Two arrays not allowed, as it creates a cartesian product num of indexes > Too much data and computation. Trying to create a MultiKeyIndex with two arrays will give error saying : cannot index parallel arrays.
+17. Check in 'winning plan' part of explain() output to see if IXSCAN is being used, or COLLSCAN. IXSCAN is index scan, and is faster than collection scan.
+18. While creating indexes, you can specify the { unique : true } value to it, which makes duplicate keys in index not possible. Kinda like SQL primary keys.
+19. Sparse Indexes : When the index key is missing from sone documents. Unique Index cannot be created on such keys, as such, you can specify the {sparse :true} along with {unique:true} to create a sparse index which will not complain for 'duplicate' null values
+20. Verbosity modes for explain() : queryPlanner, executionStats and allPlansExecution
+21. allPlansExecution does what the query optimizer does periodically: runs all possible indexes that can be used, in parallel, and decides which will be the fastest. It remembers which one will be fastest for a certain shape of the query, and reuses it when it sees similar queries. Also, it gives executionStatsfor the rejected plans also.
+22. Covered Queries : a query that can be satisfied completely by indexes, and not need any collection scan. Thus, these queries are really fast!
+23. w05v15: choosing an index . This is a very good video. see all of it. too much to write.
+24. Index Cardinality: (Num Of Indexes : Num of Documents) >> 1:1 for regular index, <= 1 for sparse indexes, >= 1 for multikey indexes.
+25. Text Index : db.collection.createIndex({'fld_name':'text'}) << this thing creates a text search index on field with the name 'fld_name'. Now, how to query using this ? like this : db.collection.find({$text: {$search:'dog'}}) searches for 'dog' inte column created with the index.
+26. Mongo automatically writes to the mongod log queries above 100 ms. For more finer details on slow queries, use the PROFILER.
+27. The PROFILER has three modes : 0: off, 1: log slow queries, 2: log all queries; The last one being more of a debugging feature than performance monitoring feature; The way you initiate PROFILER is by starting mongo with two additional parameters : 'mongod --profile 1  --slowms 5' this starts mongod with PROFILER option: '1' (log slow queries) above 5 ms. db.getProfilingLevel() will tell the level of PROFILER - 0,1 or 2. db.setProfilingLevel() is how you turn on profiling in mongo code.
+28. MongoStat : similar to unix IOSTAT; displays info like number of updates, inserts, deletes and much more, going on on a per second sample.
+/*WEEK 6*/ 29. Google : 'aggregation pipeline quick reference'
+30. $unwind : used in aggregation > if there is an array with n elements, unwind will create n documents from it, each having one of the n elements.
+31. Accumulators: can be used with $group or simply in the project stage. $group is SQL version of 'GROUP BY', and is the traditional place where Accumulators are used. In the simpler project stage, if there is an array, then Accumulators can be used over that array, and give max/min/sum etc values 

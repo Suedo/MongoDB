@@ -1,0 +1,23 @@
+{
+  "name": "m304_mongodbcourse",
+  "version": "0.0.0",
+  "description": "taking the M304 \"What's new in Mongo 3.4\" online course from Mongo",
+  "main": "app.js",
+  "dependencies": {},
+  "devDependencies": {
+    "mongodb": "^2.2.26"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Suedo/Learning-WebDesign.git"
+  },
+  "author": "Somjit",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Suedo/Learning-WebDesign/issues"
+  },
+  "homepage": "https://github.com/Suedo/Learning-WebDesign#readme"
+}

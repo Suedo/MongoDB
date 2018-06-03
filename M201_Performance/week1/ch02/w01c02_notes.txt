@@ -1,0 +1,358 @@
+Index Overhead:
+
+  Adding indexes improves read speed significantly, but it has an impact on write speed, as nodes in the b-tree that manage each index has to be updated with the writes, thus slowing it down.
+
+================================================================================
+
+How data is stored on disk:
+
+  By default, in my LinuxMint machine, the `/etc/mongod.conf` file says that my data will be stored in `/var/lib/mongodb`.
+  We will leave that as it is, and test on a different directory: `/data/db`
+
+  ------------------------------------------------------------------------------
+    1. specifying we need each directory for each database we make:
+  ------------------------------------------------------------------------------
+
+    > sudo mongod --dbpath /data/db --fork --logpath /data/db/mongodb.log
+
+      I needed `sudo` because the community edition for linux uses `mongodb` as the default owner,
+      whereas the newly created `/data/db` stuff is under root:
+
+      > somjit@somjit-mint18 ~ $ ls -ls /data/db
+        total 128
+         4 drwxr-xr-x 2 root root  4096 Aug  6 14:37 admin
+         4 drwxr-xr-x 2 root root  4096 Aug  6 14:41 diagnostic.data
+         4 drwxr-xr-x 2 root root  4096 Aug  6 14:37 journal
+         4 drwxr-xr-x 2 root root  4096 Aug  6 14:37 local
+        16 -rw-r--r-- 1 root root 16384 Aug  6 14:38 _mdb_catalog.wt
+         8 -rw-r--r-- 1 root root  4209 Aug  6 14:37 mongodb.log
+         4 -rw-r--r-- 1 root root     5 Aug  6 14:37 mongod.lock
+        16 -rw-r--r-- 1 root root 16384 Aug  6 14:38 sizeStorer.wt
+         4 -rw-r--r-- 1 root root    95 Aug  6 14:37 storage.bson
+         4 -rw-r--r-- 1 root root    49 Aug  6 14:37 WiredTiger
+         4 -rw-r--r-- 1 root root  4096 Aug  6 14:37 WiredTigerLAS.wt
+         4 -rw-r--r-- 1 root root    21 Aug  6 14:37 WiredTiger.lock
+         4 -rw-r--r-- 1 root root   994 Aug  6 14:39 WiredTiger.turtle
+        48 -rw-r--r-- 1 root root 49152 Aug  6 14:39 WiredTiger.wt
+
+      For comparison, the default folders are under mongodb owner and group:
+
+        > somjit@somjit-mint18 ~ $ ls -la /var/lib/mongodb/
+        .
+        .
+          drwxr-xr-x 2 mongodb mongodb     4096 Aug  6 13:25 journal
+          -rw-r--r-- 1 mongodb mongodb    36864 Aug  6 13:25 _mdb_catalog.wt
+          -rw-r--r-- 1 mongodb mongodb        0 Aug  6 13:25 mongod.lock
+          -rw-r--r-- 1 mongodb mongodb    45056 Aug  6 13:25 sizeStorer.wt
+          -rw-r--r-- 1 mongodb mongodb       95 Apr  6 22:35 storage.bson
+          -rw-r--r-- 1 mongodb mongodb       49 Apr  6 22:35 WiredTiger
+          -rw-r--r-- 1 mongodb mongodb     4096 Aug  6 13:25 WiredTigerLAS.wt
+          -rw-r--r-- 1 mongodb mongodb       21 Apr  6 22:35 WiredTiger.lock
+          -rw-r--r-- 1 mongodb mongodb     1004 Aug  6 13:25 WiredTiger.turtle
+          -rw-r--r-- 1 mongodb mongodb   204800 Aug  6 13:25 WiredTiger.wt
+        .
+        .
+  ------------------------------------------------------------------------------
+    2. specifying we need a directory for each database, with collections and
+        indexes being in separate folders
+  ------------------------------------------------------------------------------
+
+    Shutdown the previously started server:
+
+      > mongo admin --eval 'db.shutdownServer()'
+
+    note: doing `mongo admin --eval 'db.shutdownServer()'` is the same as the following three steps:
+        > mongo
+        > use admin
+        > db.shutdownServer()
+      .. only that, since we are issuing these from the mongo shell itself, which was earlier connected to the server, and now is not (as we just shut it down), the output of the last command will show something like an error, saying `cannot connect` etc, which makes sense, as the server is shutdown and cannot be connected to. You can verify that the server is down by looking at the `/data/db/mongodb.log`m which should show something like `shutting down with code:0` in the end
+
+
+
+    Remove the existing folders and create a new one. Otherwise `--wiredTigerDirectoryForIndexes` wont work:
+
+      > rm -rf /data/db
+      > mkdir -p /data/db
+
+    Issue the following:
+      > mongod --dbpath /data/db --fork --logpath /data/db/mongodb.log --directoryperdb --wiredTigerDirectoryForIndexes
+
+    We do an insert into a newly created hello database like so:
+
+      > mongo hello --eval 'db.a.insert({a:1}, {writeConcern: {w:1, j:true}})'
+
+    Now, we see that not only is there a `hello` directory, but also index and collections under it are stored in different folders: (excerpt from a `ls -laR \data` command)
+
+      /data/db/hello:
+      total 16
+      drwxr-xr-x 4 root root 4096 Aug  6 14:48 .
+      drwxr-xr-x 7 root root 4096 Aug  6 14:48 ..
+      drwxr-xr-x 2 root root 4096 Aug  6 14:48 collection
+      drwxr-xr-x 2 root root 4096 Aug  6 14:48 index
+
+      /data/db/hello/collection:
+      total 24
+      drwxr-xr-x 2 root root  4096 Aug  6 14:48 .
+      drwxr-xr-x 4 root root  4096 Aug  6 14:48 ..
+      -rw-r--r-- 1 root root 16384 Aug  6 14:48 5-8940099329911515610.wt
+
+      /data/db/hello/index:
+      total 24
+      drwxr-xr-x 2 root root  4096 Aug  6 14:48 .
+      drwxr-xr-x 4 root root  4096 Aug  6 14:48 ..
+      -rw-r--r-- 1 root root 16384 Aug  6 14:48 6-8940099329911515610.wt
+
+
+================================================================================
+
+  ------------------------------------------------------------------------------
+    1. Using single key indexes
+  ------------------------------------------------------------------------------
+
+  using the people.json file to get data :
+
+  > mongoimport -d m201 -c people --drop people.json
+
+  Data populated, folder-wise:
+
+    > ls -laR /data | grep m201
+    drwxr-xr-x 4 root    root     4096 Aug  6 15:39 m201
+    /data/db/m201:
+    /data/db/m201/collection:
+    /data/db/m201/index:
+
+  Before Index:
+
+    > exp = db.people.explain("executionStats")
+    > exp.find( { "ssn" : "720-38-5636" } )
+
+        "executionStats" : {
+      		"executionSuccess" : true,
+      		"nReturned" : 1,
+      		"executionTimeMillis" : 49,
+      		"totalKeysExamined" : 0,
+      		"totalDocsExamined" : 50474,  // looks at all documents
+      		"executionStages" : {
+      			"stage" : "COLLSCAN",
+      			"filter" : {
+      				"ssn" : {
+      					"$eq" : "720-38-5636"
+      				}
+      			},
+
+  After Index:
+
+    > db.people.createIndex( { ssn : 1 } )
+    > exp = db.people.explain("executionStats")
+    > exp.find( { "ssn" : "720-38-5636" } )
+
+    "executionStats" : {
+      "executionSuccess" : true,
+      "nReturned" : 1,
+      "executionTimeMillis" : 1,
+      "totalKeysExamined" : 1,
+      "totalDocsExamined" : 1,      // looks at only one document thanks to Index Scan
+
+
+  note: If a document has subdocument, we should not create an index on the document itself,
+        but rather on the sub document, otherwise, the query has to traverse all the fields in the sub document
+
+        // insert a documents with an embedded document
+        db.examples.insertOne( { _id : 0, subdoc : { indexedField: "value", otherField : "value" } } )
+        db.examples.insertOne( { _id : 1, subdoc : { indexedField : "wrongValue", otherField : "value" } } )
+
+        // create an index using dot-notation
+        db.examples.createIndex( { "subdoc.indexedField" : 1 } )
+
+        // explain a query using dot-notation
+        db.examples.explain("executionStats").find( { "subdoc.indexedField" : "value" } )
+
+        // winningplan shows dot-notationed sub-document being used for indexing:
+        "winningPlan" : {
+          "stage" : "FETCH",
+          "inputStage" : {
+            "stage" : "IXSCAN",
+            "keyPattern" : {
+              "subdoc.indexedField" : 1
+            },
+
+  Even when looking fo a set of values, if the field of whose value we are looking for falls in the index,
+  it is still possible to get an indexscan:
+
+    > exp.find( { "ssn" : { $in : [ "001-29-9184", "177-45-0950", "265-67-9973" ] }, last_name : { $gte : "H" } } )
+
+        "winningPlan" : {
+          "stage" : "FETCH",
+          "filter" : {
+            "last_name" : {
+              "$gte" : "H"
+            }
+          },
+          "inputStage" : {
+            "stage" : "IXSCAN",
+            "keyPattern" : {
+              "ssn" : 1
+            },
+
+  ------------------------------------------------------------------------------
+    2. Sorting with indexes
+  ------------------------------------------------------------------------------
+
+  Sort can happen:
+
+    - In memory :
+
+        documents are copied from disk to ram, and then sorted there.
+        Will abort if >= 32MB is being used
+
+    - Using Index :
+
+        IXSCAN returns documents in sorted order of the keys. Thus, if the sort keys
+        are in tandem with the index keys, no extra sort step will be needed, as
+        documents are already returned in sorted order
+
+  Indexes can be traversed in both forward and backward directions.
+  A descending sort can use an ascending index
+
+
+  ------------------------------------------------------------------------------
+    3. Compound indexes and Index Prefixes
+  ------------------------------------------------------------------------------
+
+  Generally, indexes are built on more than one field. These are called Compound Indexes.
+
+  Index Prefixes is a continuos subset of the compound index, STARTING FROM THE LEFT:
+
+    If the compound index is bulit on: { "item":1, "location":1, "stock":1 }
+    Then there are two index prefixes:
+      { "item": 1 }
+      { "item": 1, "location": 1 }
+
+  If you have multiple queries, where one is the largest, and others are subset of that, build an index on the largest query, such that the subset queries can also use the index. This saves on space, as well as lower write times, as greater the number of indexes, greater the write times(generally)
+
+
+  Sort with Index Prefix: Sort keys have to be index prefixes:
+
+    Sort Query                                                      // Index Prefix
+    --------------------------------------------------------------------------------
+    db.data.find().sort( { a: 1 } ) 	                              // { a: 1 }
+    db.data.find().sort( { a: -1 } ) 	                              // { a: 1 }
+    db.data.find().sort( { a: 1, b: 1 } ) 	                        // { a: 1, b: 1 }
+    db.data.find().sort( { a: -1, b: -1 } ) 	                      // { a: 1, b: 1 }
+    db.data.find().sort( { a: 1, b: 1, c: 1 } ) 	                  // { a: 1, b: 1, c: 1 }
+    db.data.find( { a: { $gt: 4 } } ).sort( { a: 1, b: 1 } )        // { a: 1, b: 1 }
+
+
+
+  Sort with non-Index Prefix: Must be equality condition on all the prefix keys that precede the sort key(s)
+
+  Ex: If the index is formed of : { a: 1, b: 1, c: 1, d: 1 },
+      Then the below sort can use the index:
+
+    Sort Query                                                   // Index Prefix
+    --------------------------------------------------------------------------------
+    db.data.find( { a: 5 } ).sort( { b: 1, c: 1 } ) 	           // { a: 1 , b: 1, c: 1 }
+    db.data.find( { b: 3, a: 4 } ).sort( { c: 1 } ) 	           // { a: 1, b: 1, c: 1 }
+    db.data.find( { a: 5, b: { $lt: 3} } ).sort( { b: 1 } ) 	   // { a: 1, b: 1 }
+
+    In the last one above, equality holds in the preceding key (a:5), so `b` being a range query is still ok
+
+================================================================================
+
+  Multi Key indexes:
+  ------------------------------------------------------------------
+
+    - It is the index created when one of the index keys is an array
+    - Number of indexes formed : cartesian product between single key elements and the array entries
+    - Index cannot be formed if more than one of the specified key entries is an array, as it would lead to a large number of indexes (cartesian product of array elems) which would be non-performant to manage
+    - MultiKey Indexes do not support covered queries
+    - Trying to create an index with n keys, out of which if more than one is an array, will lead to an error : `cannot index parallel arrays < [arr1] [arr2] ... >` (shows the arrays you tried creating an index over)
+
+================================================================================
+
+  ------------------------------------------------------------------------------
+    1. Partial Indexes
+  ------------------------------------------------------------------------------
+
+
+  Let's say we have a restaurant collection, where each document is of the form:
+
+    {
+       "name" : "Han Dynasty",
+       "cuisine" : "Sichuan",
+       "stars" : 4.4,
+       "address" : {
+          "street" : "90 3rd Ave",
+          "city" : "New York",
+          "state" : "NY",
+          "zipcode" : "10003"
+       }
+    }
+
+
+  Now most of the traffic is for restaurants with >= 3.5 rating, so, we can create a partial index that is tailored for our specific traffic patterns:
+
+  db.restaurants.createIndex(
+    { "address.city": 1, cuisine: 1 },
+    { partialFilterExpression: { 'stars': { $gte: 3.5 } } }
+  )
+
+  This way, our indexes are smaller, and thus also faster. This is especially usefull when we have huge data and the full index is growing larger than the available RAM
+
+  ------------------------------------------------------------------------------
+    2. Partial Indexes vs Sparse Indexes
+  ------------------------------------------------------------------------------
+
+  Partial Index > Sparse Index
+
+  Sparse indexes are where the index key(s) may contain a null value, like the below example where all restaurants may not have a star rating, so if we want to create and index on the star rating, we have to create a sparse index:
+
+
+    db.restaurants.createIndex(
+      {stars: 1},
+      {sparse: true}      // some restaurants may not have any star ratings, so index on those that
+    )
+
+  The same can also be accomplished by partial indexes:
+
+    db.restaurants.createIndex(
+      {stars: 1},
+      { partialFilterExpression: { "stars": { $exists: true } }}
+    )
+
+  Additionally, we can use partial indexes to create 'sparse' indexes over non indexing fields as well:
+
+    db.restaurants.createIndex(
+      { stars: 1},
+      { partialFilterExpression: { "cuisine": { $exists: true }}}
+    )
+
+  ------------------------------------------------------------------------------
+    3. Partial Index gotchas
+  ------------------------------------------------------------------------------
+
+  NOTE: In order to use the partial index, the query must be guaranteed to use a subset of the documents defined by the partial index. Otherwise, mongodb will be forced to use a collection scan out of risk of missing out on valid results. Below is an example:
+
+    // create a partial index
+    db.restaurants.createIndex(
+      { "address.city": 1, cuisine: 1 },
+      { partialFilterExpression: { 'stars': { $gte: 3.5 } } }
+    )
+
+    // doesn't use the partial index because what if the restaurant is below 3.5 ?
+    db.restaurants.find({'address.city': 'New York', 'cuisine': 'Sichuan'})
+
+    // adding the stars predicate allows us to use the partial index
+    // >= 4 stars is a subset of the documents for whom we created the partial index ( >= 3.5 )
+    exp.find({'address.city': 'New York', cuisine: 'Sichuan', stars: { $gt: 4.0 }})
+
+  ------------------------------------------------------------------------------
+    4. Partial Index restrictions
+  ------------------------------------------------------------------------------
+
+    - Cannot specify partialFilterExpression and sparse option together
+    - _id cannot be partial
+    - Shard Key cannot be partial
+
+
+================================================================================

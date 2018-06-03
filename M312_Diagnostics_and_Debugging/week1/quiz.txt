@@ -1,0 +1,12 @@
+Quiz:
+
+Which of the following are true?
+
+  1. Compass was originally developed as being a full graphical shell replacement for the MongoDB shell.
+  2. Compass was built to be a drop-in replacement for Cloud Manager and Ops Manager.
+  3. Compass was developed to give you a powerful interface to understanding, exploring, and editing your MongoDB data, and provide you with insights into your current server and query performance.
+  4. Compass only works with MongoDB 3.4+.
+
+Ans: 1 and 3
+
+================================================================================

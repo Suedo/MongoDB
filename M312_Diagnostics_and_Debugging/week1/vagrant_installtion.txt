@@ -1,0 +1,73 @@
+1. Vagrant requires a VM Provider. Download and install the correct VirtualBox (you can use other providers as well) edition. I'm running on 64 Bit LinuxMint 18 'Sarah', which is linked to Ubuntu Xenial, so I downloaded the amd64 xenial package (from https://www.virtualbox.org/wiki/Linux_Downloads) and installed it. 
+
+  Note: Originally, I did `sudo apt-get` and installed :
+
+    a. virtualbox-guest-dkms 
+    b. virtualbox-guest-utils
+    c. virtualbox-guest-x11  
+
+  None of these helped, because I really needed: virtualbox-5.1 
+  This came from installing from the downloaded package. 
+
+2. Extract the vagrant environment data files (vagrant file and provison) into a folder. By default, this will be `m312-vagrant-env`.
+
+3. `cd` into the folder and install the vagrant-vbguest plugin
+	
+	$ vagrant plugin install vagrant-vbguest
+
+	For me, it showed this output:
+
+		Fetching: vagrant-share-1.1.9.gem (100%)
+		Fetching: micromachine-2.0.0.gem (100%)
+		Fetching: vagrant-vbguest-0.14.2.gem (100%)
+		Installed the plugin 'vagrant-vbguest (0.14.2)'!
+
+4. vagrant up
+
+	This will setup the vagrant machine. I had to do this a couple of times: was getting an error that said:
+
+		The private key to connect to this box via SSH has invalid permissions set on it. The permissions of the private key should be set to 0600, otherwise SSH will ignore the key. Vagrant tried to do this automatically for you but failed. Please set the
+		permissions on the following file to 0600 and then try running this command again:
+
+		/my/folder/m312-vagrant-env/.vagrant/machines/m312/virtualbox/private_key
+
+		Note that this error occurs after Vagrant automatically tries to
+		do this for you. The likely cause of this error is a lack of filesystem permissions or even filesystem functionality. For example, if your Vagrant data is on a USB stick, a common case is that chmod is not supported. The key will need to be moved to a filesystem that supports chmod.
+
+
+	I manually went into the private_key path and did a `chmod 600 private_key`. Then did `vagrant up` again... a little progress but failed again with the same issue, so I did `chmod 0600 private_key` (notice the extra left 0 with 600), and again `vagrant up`. This time seemed to work! and i got this displayed:
+
+		Bringing machine 'm312' up with 'virtualbox' provider...
+		==> m312: Machine already provisioned. Run `vagrant provision` or use the `--provision`
+		==> m312: flag to force provisioning. Provisioners marked to run always will still run.
+
+
+5. vagrant ssh
+
+	Failure! This did not work, and again complained of the chmod issue. My computer is a dual-boot of windows and linux, with linux having a small disk partition. As such, the course data and `m312-vagrant-env` folder resided in the windows partition drives, and i guessed that is why this issue was coming up.
+
+	WorkAround: 
+
+		1. Close the 'up'-ed VM: VirtualBox > Select VM > Power Off
+		2. Copy all the contents of `m312-vagrant-env` and put it in a new folder in my linux partition.
+		3. Go to new linux partition folder > do `vagrant up`. 
+
+			==> m312: Mounting shared folders...
+			    m312: /shared => /home/somjit/Downloads/mongoVagrantM312/shared
+			    m312: /dataset => /home/somjit/Downloads/mongoVagrantM312/dataset
+			    m312: /vagrant => /home/somjit/Downloads/mongoVagrantM312
+
+			^^ This, at the end of `vagrant up` shows that shared folders are also setup, which did not happen earlier
+
+		4. Once everything up and running, do `vagrant ssh`
+
+	`vagrant ssh` now successfully connected to the vm
+
+6. Test	the new VM and SSH Connections:
+
+	Exit > come back to your own terminal
+	do `echo hello >> shared/test.txt`
+	do `vagrant ssh` and connect to VM
+	do `cat /shared/test.txt` : This should say `hello` in your VM shell. If so, Congrats! Everything is setup!
+
+	

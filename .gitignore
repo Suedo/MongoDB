@@ -1,0 +1,8 @@
+Learning-Bootstrap4/coursefiles/*
+#Learning-Bootstrap4/node_modules/*
+**/node_modules/
+**/videos/
+**/handouts/*
+!**/handouts/*.zip
+*.mp4
+mtools/
